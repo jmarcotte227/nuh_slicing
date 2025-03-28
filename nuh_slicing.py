@@ -57,9 +57,10 @@ class nuhSlicer:
         base_slice = self._plane_cut(x_y_plane)
         layer_num = 0
         rot_angle = 0
-        self.curve_sliced = {
+        pos_curve_sliced = {
                 layer_num: base_slice
                 }
+        self.curve_sliced = {}
 
         while rot_angle<(np.deg2rad(90)-nom_angle): # TODO: Come up with a better condition here
             # calculate plane equation
@@ -73,7 +74,24 @@ class nuhSlicer:
             slice_plane = np.zeros(4)
             slice_plane[0:3] = n
             slice_plane[3] = -np.dot(slice_plane[0:3], np.array([100, 0, 0]))
-            self.curve_sliced[layer_num] = self._plane_cut(slice_plane)
+            pos_curve_sliced[layer_num] = self._plane_cut(slice_plane)
+
+        # loop through and calculate direction to closest point in the previous layer
+        for key, pos_curve in pos_curve_sliced.items():
+            curve = np.zeros((pos_curve.shape[0], 6))
+            curve[:,0:3] = pos_curve
+            # if first layer, the direction is straight down
+            if key == 0:
+                curve[:,3:] = np.array([0,0,-1])
+            else:
+                pos_curve_prev = pos_curve_sliced[key-1]
+                # find distance to closest point in the previous layer
+                for idx, point in enumerate(pos_curve):
+                    min_pt_idx = np.argmin(norm(point - pos_curve_prev, axis=1))
+                    # draw a unit vector in the direction of the point
+                    curve[idx,3:] = (pos_curve_prev[min_pt_idx]-point)/norm(pos_curve_prev[min_pt_idx]-point)
+                
+            self.curve_sliced[key] = curve
 
     def _plane_cut(self, plane, vis=False):
         '''
@@ -195,8 +213,11 @@ class nuhSlicer:
         # initialize mesh for plane
         fig = plt.figure()
         axes = fig.add_subplot(projection='3d')
-        for _, curve in self.curve_sliced.items():
-            axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
+        for key, curve in self.curve_sliced.items():
+            if key == 1:
+                axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
+                axes.quiver(curve[:,0], curve[:,1], curve[:,2], curve[:,3], curve[:,4], curve[:,5])
+
 
         axes.set_aspect('equal')
         plt.show()
