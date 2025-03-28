@@ -3,6 +3,7 @@ from numpy.linalg import norm
 import stl
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
+import general_robotics_toolbox as rox
 
 class nuhSlicer:
     def __init__(self, model_file, transform = None):
@@ -20,6 +21,9 @@ class nuhSlicer:
             self.mod_mesh.transform(transform)
         # Extract Vertices
         self.vertices = np.reshape(self.mod_mesh.vectors,(-1,3))
+
+        # Initialize space for curve_sliced data
+        self.curve_sliced = {}
 
     def vis_mesh(self):
         '''
@@ -41,17 +45,35 @@ class nuhSlicer:
         print("COG: ", cog)
         print("Inertia Tensor: ", inertia)
 
-    def single_ra_slice(self, rot_axis, nom_angle = np.deg2rad(1.5), vis=False):
+    def single_ra_slice(self, rot_dist = 100, nom_angle = np.deg2rad(1.5), vis=False):
         '''
-        Slices about an axis, using bounds on h_min and h_max. Returns set of curves for each layer.
-        Uses a bisection search to determine angular slice increase
+        Slices about an axis parallel to the y axis, using bounds on h_min and h_max. 
+        Returns set of curves for each layer.
         rot_axis : 2x3 numpy array. axis about which the slicing plane should rotate. 
             2 points to define this line.
         '''
         # define the base slice as the x,y plane
-        base_slice = _plane_cut(np.array([0,0,1,0],vis=True))
-        return True
+        x_y_plane = np.array([0,0,1,0])
+        base_slice = self._plane_cut(x_y_plane)
+        layer_num = 0
+        rot_angle = 0
+        self.curve_sliced = {
+                layer_num: base_slice
+                }
 
+        while rot_angle<(np.deg2rad(90)-nom_angle): # TODO: Come up with a better condition here
+            # calculate plane equation
+            # direction vector of the axis
+            # TODO: generalize to arbitrary axis. Will make things a lot more complicate
+            # rotate normal of the plane about the origin
+            rot_angle += nom_angle
+            layer_num += 1
+            R = rox.rot([0,1,0], rot_angle) # might be able to use this to generalize
+            n = R@x_y_plane[0:3]
+            slice_plane = np.zeros(4)
+            slice_plane[0:3] = n
+            slice_plane[3] = -np.dot(slice_plane[0:3], np.array([100, 0, 0]))
+            self.curve_sliced[layer_num] = self._plane_cut(slice_plane)
 
     def _plane_cut(self, plane, vis=False):
         '''
@@ -88,6 +110,12 @@ class nuhSlicer:
 
         return in_plane_pts
 
+    def _calc_min_height(self):
+        idx=0
+        return idx
+    def _calc_max_height(self):
+        idx=0
+        return idx
     def _intersect_line_plane(self,line,plane, epsilon = 1e-6):
         '''
         Calculates the intersection point of a line segment and a plane.
@@ -110,7 +138,7 @@ class nuhSlicer:
 
         return None, None
 
-    def _normalize_point_distance(self, pts, pts_dist=3, start_pt=None, closed=True):
+    def _normalize_point_distance(self, pts, pts_dist=1, start_pt=None, closed=True):
         '''
         Normalize the distance between points in a list of points. Iterates through distances 
         to points, going first to the next closest point.
@@ -159,6 +187,21 @@ class nuhSlicer:
         centerline=None
         return centerline
 
+    def vis_curvesliced(self):
+        if not self.curve_sliced:
+            print("model not sliced yet")
+            return
+
+        # initialize mesh for plane
+        fig = plt.figure()
+        axes = fig.add_subplot(projection='3d')
+        for _, curve in self.curve_sliced.items():
+            axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
+
+        axes.set_aspect('equal')
+        plt.show()
+
+
 if __name__=='__main__':
     stl_file = 'models/funnel_tube_solid.stl'
 
@@ -171,13 +214,7 @@ if __name__=='__main__':
         ])
 
     # define the parameters of the plane
-    normal = np.array([1, 0, 1])
-    normal = normal/np.linalg.norm(normal)
-    dist = -20
-    plane = np.zeros(4)
-    plane[:3] = normal
-    plane[3] = dist
-    
     slicer = nuhSlicer(stl_file, tf)
-    slicer._plane_cut(plane, vis=True)
+    slicer.single_ra_slice(nom_angle = np.deg2rad(1.2))
+    slicer.vis_curvesliced()
 
