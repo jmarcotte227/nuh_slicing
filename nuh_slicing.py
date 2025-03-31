@@ -4,6 +4,7 @@ import stl
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import general_robotics_toolbox as rox
+import ezdxf
 
 class nuhSlicer:
     def __init__(self, model_file, transform = None):
@@ -57,6 +58,7 @@ class nuhSlicer:
         base_slice = self._plane_cut(x_y_plane)
         layer_num = 0
         rot_angle = 0
+
         pos_curve_sliced = {
                 layer_num: base_slice
                 }
@@ -77,6 +79,46 @@ class nuhSlicer:
             pos_curve_sliced[layer_num] = self._plane_cut(slice_plane)
 
         # loop through and calculate direction to closest point in the previous layer
+        self._find_dir_vec(pos_curve_sliced)
+
+    def centerline_slice(self, centerline,  vis=False):
+        '''
+        Slices at fixed distance along the centerline of the part. Currently requires a
+        centerline with a known equation.
+        Centerline: nx3 numpy array with each point at a fixed distance along the centerline.
+        '''
+        x_y_plane = np.array([0,0,1,0])
+        base_slice = self._plane_cut(x_y_plane)
+        pos_curve_sliced = {
+                0: base_slice
+                }
+        self.curve_sliced = {}
+        # already sliced first point
+        for idx, pt in enumerate(centerline):
+            if (idx != 0) and (idx != len(centerline)-1):
+                # calculate normal using previous and next point
+                normal = (centerline[idx+1]-centerline[idx-1])/norm(centerline[idx+1]-centerline[idx-1])
+                # calculate plane using normal and current centerline point
+                d = - np.dot(normal, pt)
+                slice_plane = np.zeros(4)
+                slice_plane[:3] = normal
+                slice_plane[3] = d
+                pos_curve_sliced[idx] = self._plane_cut(slice_plane)
+        self._find_dir_vec(pos_curve_sliced)
+
+    def load_centerline(self, filepath):
+        '''
+        Loads the centerline data from a .dxf file and formats it to the required shape
+        filepath: centerline dxf filepath
+        '''
+        doc = ezdxf.readfile(filepath)
+        print(doc)
+
+
+
+
+
+    def _find_dir_vec(self, pos_curve_sliced):
         for key, pos_curve in pos_curve_sliced.items():
             curve = np.zeros((pos_curve.shape[0], 6))
             curve[:,0:3] = pos_curve
@@ -85,12 +127,13 @@ class nuhSlicer:
                 curve[:,3:] = np.array([0,0,-1])
             else:
                 pos_curve_prev = pos_curve_sliced[key-1]
-                # find distance to closest point in the previous layer
                 for idx, point in enumerate(pos_curve):
-                    min_pt_idx = np.argmin(norm(point - pos_curve_prev, axis=1))
+                    # find the 5 closest points in the previous layer
+                    min_pt_idx = np.argsort(norm(point - pos_curve_prev, axis=1))[:1]
+                    #average position of the 5 closest points
+                    avg_point_prev = np.mean(pos_curve_prev[min_pt_idx], axis=0)
                     # draw a unit vector in the direction of the point
-                    curve[idx,3:] = (pos_curve_prev[min_pt_idx]-point)/norm(pos_curve_prev[min_pt_idx]-point)
-                
+                    curve[idx,3:] = (avg_point_prev-point)/norm(avg_point_prev-point)
             self.curve_sliced[key] = curve
 
     def _plane_cut(self, plane, vis=False):
@@ -205,7 +248,7 @@ class nuhSlicer:
         centerline=None
         return centerline
 
-    def vis_curvesliced(self):
+    def vis_curvesliced(self, dir_vec = True):
         if not self.curve_sliced:
             print("model not sliced yet")
             return
@@ -214,14 +257,25 @@ class nuhSlicer:
         fig = plt.figure()
         axes = fig.add_subplot(projection='3d')
         for key, curve in self.curve_sliced.items():
-            if key == 1:
-                axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
+            axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
+            if dir_vec:
                 axes.quiver(curve[:,0], curve[:,1], curve[:,2], curve[:,3], curve[:,4], curve[:,5])
-
 
         axes.set_aspect('equal')
         plt.show()
 
+def pt_line_projection(line, pt):
+    '''
+    Projects a single point onto a line.
+    line: 2x3 matrix containing 3d points on either end of a line
+    pt: 3 vector of the point to be projected
+    '''
+    p_0 = line[0]
+    v = line[1]-line[0]
+    proj_val = v@v.T/(v.T@v)
+
+    # orthogonal projection to be implemented
+    # https://math.stackexchange.com/questions/62633/orthogonal-projection-of-a-point-onto-a-line
 
 if __name__=='__main__':
     stl_file = 'models/funnel_tube_solid.stl'
@@ -236,6 +290,18 @@ if __name__=='__main__':
 
     # define the parameters of the plane
     slicer = nuhSlicer(stl_file, tf)
-    slicer.single_ra_slice(nom_angle = np.deg2rad(1.2))
-    slicer.vis_curvesliced()
+
+
+    # define the centerline as circle of radius 100 for 100 slices
+    cl = np.zeros((100,3))
+    cl_len = (2*np.pi/4)*100 # len of centerline in mm
+    ang_per_seg = -np.deg2rad(90/100)
+    for i in range(100):
+        base_pt = np.array([-100, 0, 0])
+        cl[i, 0] = base_pt[0]*np.cos(ang_per_seg*i)- np.sin(ang_per_seg*i)*base_pt[2]
+        cl[i,2] = base_pt[0]*np.sin(ang_per_seg*i) + np.cos(ang_per_seg*i)*base_pt[2]
+    # translatae to same as stl
+    cl[:,0] = cl[:,0]+100
+    slicer.centerline_slice(cl)
+    slicer.vis_curvesliced(dir_vec = False)
 
