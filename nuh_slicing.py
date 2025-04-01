@@ -5,6 +5,8 @@ from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import general_robotics_toolbox as rox
 import ezdxf
+from scipy.spatial import Voronoi
+import trimesh
 
 class nuhSlicer:
     def __init__(self, model_file, transform = None):
@@ -35,7 +37,12 @@ class nuhSlicer:
         '''
         fig = plt.figure()
         axes = fig.add_subplot(projection='3d')
-        axes.add_collection3d(mplot3d.art3d.Poly3DCollection(self.mod_mesh.vectors))
+        axes.add_collection3d(mplot3d.art3d.Poly3DCollection(
+            self.mod_mesh.vectors,
+            # facecolor=(0,0,1,0.2),
+            linewidth=0.5,
+            edgecolor=(0,0,0)
+            ))
         axes.set_aspect('equal')
         plt.show()
 
@@ -83,6 +90,16 @@ class nuhSlicer:
 
         # loop through and calculate direction to closest point in the previous layer
         self._find_dir_vec(pos_curve_sliced)
+
+    def calc_centerline(self, vis=False):
+        points_flat = np.reshape(self.mod_mesh.points, (-1,3))
+        fig = plt.figure()
+        axes = fig.add_subplot(projection='3d')
+        axes.scatter(points_flat[:,0], points_flat[:,1], points_flat[:,2])
+        axes.set_aspect('equal')
+        plt.show()
+        vor = Voronoi(points_flat)
+
 
     def centerline_slice(self, centerline,  vis=False):
         '''
@@ -309,6 +326,8 @@ if __name__=='__main__':
 
     # define the parameters of the plane
     slicer = nuhSlicer(stl_file, tf)
+    slicer.calc_centerline()
+    # slicer.vis_mesh()
     # slicer.load_centerline(cl_file)
 
     # define the centerline as circle of radius 100 for 100 slices
