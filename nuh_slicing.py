@@ -25,6 +25,9 @@ class nuhSlicer:
 
         # Initialize space for curve_sliced data
         self.curve_sliced = {}
+        
+        # initialize centerline
+        self.cl = None
 
     def vis_mesh(self):
         '''
@@ -104,6 +107,14 @@ class nuhSlicer:
                 slice_plane[:3] = normal
                 slice_plane[3] = d
                 pos_curve_sliced[idx] = self._plane_cut(slice_plane)
+        # approximate normal of last point as previous point and current point
+        normal = (centerline[-1]-centerline[-2])/norm(centerline[-1]-centerline[-2])
+        d = - np.dot(normal, centerline[-1])
+        slice_plane = np.zeros(4)
+        slice_plane[:3] = normal
+        slice_plane[3] = d
+        pos_curve_sliced[len(centerline)-1] = self._plane_cut(slice_plane)
+
         self._find_dir_vec(pos_curve_sliced)
 
     def load_centerline(self, filepath):
@@ -112,8 +123,9 @@ class nuhSlicer:
         filepath: centerline dxf filepath
         '''
         doc = ezdxf.readfile(filepath)
-        print(doc)
-
+        msp = doc.modelspace()
+        arc = msp[0]
+        # TODO: Need to figure out if this import is worth it
 
 
 
@@ -159,7 +171,7 @@ class nuhSlicer:
 
         if vis:
             # initialize mesh for plane
-            xx, yy = np.meshgrid(range(-30,30), range(-30, 30))
+            xx, yy = np.meshgrid(range(-30,60), range(-30, 30))
             z = (-plane[0]*xx-plane[1]*yy-plane[3])/plane[2]
             fig = plt.figure()
             axes = fig.add_subplot(projection='3d')
@@ -259,8 +271,14 @@ class nuhSlicer:
         for key, curve in self.curve_sliced.items():
             axes.scatter(curve[:,0], curve[:,1], curve[:,2], c='r')
             if dir_vec:
-                axes.quiver(curve[:,0], curve[:,1], curve[:,2], curve[:,3], curve[:,4], curve[:,5])
-
+                len_fact = 2
+                axes.quiver(curve[:,0], 
+                            curve[:,1],
+                            curve[:,2],
+                            curve[:,3]*len_fact,
+                            curve[:,4]*len_fact,
+                            curve[:,5]*len_fact)
+        axes.plot3D(self.cl[:,0], self.cl[:,1], self.cl[:,2], c='b')
         axes.set_aspect('equal')
         plt.show()
 
@@ -279,6 +297,7 @@ def pt_line_projection(line, pt):
 
 if __name__=='__main__':
     stl_file = 'models/funnel_tube_solid.stl'
+    cl_file = 'models/funnel_tube_cl.dxf'
 
     # transform to shift test part
     tf = np.array([
@@ -290,18 +309,20 @@ if __name__=='__main__':
 
     # define the parameters of the plane
     slicer = nuhSlicer(stl_file, tf)
-
+    # slicer.load_centerline(cl_file)
 
     # define the centerline as circle of radius 100 for 100 slices
-    cl = np.zeros((100,3))
+    num_points = 25
+    cl = np.zeros((num_points,3))
     cl_len = (2*np.pi/4)*100 # len of centerline in mm
-    ang_per_seg = -np.deg2rad(90/100)
-    for i in range(100):
+    ang_per_seg = -np.deg2rad(90/(num_points-1))+0.001
+    for i in range(num_points):
         base_pt = np.array([-100, 0, 0])
         cl[i, 0] = base_pt[0]*np.cos(ang_per_seg*i)- np.sin(ang_per_seg*i)*base_pt[2]
         cl[i,2] = base_pt[0]*np.sin(ang_per_seg*i) + np.cos(ang_per_seg*i)*base_pt[2]
     # translatae to same as stl
     cl[:,0] = cl[:,0]+100
+    slicer.cl = cl
     slicer.centerline_slice(cl)
-    slicer.vis_curvesliced(dir_vec = False)
+    slicer.vis_curvesliced(dir_vec = True)
 
